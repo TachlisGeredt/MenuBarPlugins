@@ -9,7 +9,7 @@ This document tells AI coding agents how to build, compile, install, and test pl
 - **Host App**: `MenuBarPlugins.app` (pure Swift + AppKit, `LSUIElement = true`, macOS 13+).
   - Shows a fallback puzzle-piece icon only when 0 plugins are active and `persistentIcon` is `true` (default).
   - Automatically appends a lazy **Manage Icons ▸** submenu to the bottom of every active plugin's menu (plugins do not need to add host controls themselves).
-- **Shared SDK**: `MenuBarPluginKit` (`MenuBarPlugins.app/Contents/Frameworks/libMenuBarPluginKit.dylib` + `MenuBarPluginKit.swiftmodule`).
+- **Shared SDK**: `MenuBarPluginKit` (`MenuBarPlugins.app/Contents/Frameworks/libMenuBarPluginKit.dylib` + `MenuBarPluginKit.swiftmodule` + `MenuBarPluginKit.swiftinterface`), compiled with `-enable-library-evolution` for binary compatibility across additive updates.
 - **Portable Plugins Directory**: `Plugins/<PluginName>/` right next to `MenuBarPlugins.app`.
   - Every plugin is **100% self-contained** in its own subfolder:
     - `manifest.json` (required)
@@ -76,6 +76,11 @@ final class ExamplePlugin: NSObject, MenuBarPlugin {
     private func refresh() {
         context?.setTitle("Updated")
     }
+}
+
+@_cdecl("mbp_plugin_api_version")
+public func pluginAPIVersion() -> Int32 {
+    kMenuBarPluginAPIVersion
 }
 
 @_cdecl("mbp_create_plugin")
@@ -193,4 +198,5 @@ swiftc \
 
 ### Rebuilding the Framework & Running Tests
 - Rebuild everything: `./scripts/build-app.sh`
-- Run test suite (manifest validation, activation rules, scheduler): `./scripts/run-tests.sh`
+- Run test suite (manifest validation, activation rules, scheduler, config persistence, and `FixturePlugin` compile/`dlopen` contract test): `./scripts/run-tests.sh`
+- GitHub Actions CI (`.github/workflows/ci.yml`) runs both scripts on macOS on every push and PR.

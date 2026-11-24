@@ -239,6 +239,8 @@ final class HostMenuController: NSObject, NSMenuDelegate {
         case .whenAppActive:
             let apps = rule.bundleIdentifiers.joined(separator: ", ")
             return "When active (\(apps))"
+        @unknown default:
+            return "Custom"
         }
     }
 

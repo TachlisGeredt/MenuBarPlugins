@@ -34,3 +34,10 @@ import Foundation
 
 /// Standard symbol name exported by every plugin dynamic library.
 public let kMenuBarPluginFactorySymbol = "mbp_create_plugin"
+
+/// Current binary API version of `MenuBarPluginKit`.
+/// Bump this only when making an intentional breaking ABI/API change.
+public let kMenuBarPluginAPIVersion: Int32 = 1
+
+/// Optional C symbol a plugin may export returning the `kMenuBarPluginAPIVersion` it was compiled against.
+public let kMenuBarPluginAPIVersionSymbol = "mbp_plugin_api_version"

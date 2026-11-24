@@ -19,16 +19,18 @@ echo "==> Preparing $APP_DIR (target: $TARGET)..."
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$FRAMEWORKS_DIR" "$PLUGINS_DIR"
 
-echo "==> Building MenuBarPluginKit.dylib..."
+echo "==> Building MenuBarPluginKit.dylib (Library Evolution enabled)..."
 swiftc \
     -sdk "$SDK_PATH" \
     -target "$TARGET" \
     -module-cache-path "$MODULE_CACHE" \
     -O \
     -parse-as-library \
+    -enable-library-evolution \
     -module-name MenuBarPluginKit \
     -emit-module \
     -emit-module-path "$FRAMEWORKS_DIR/MenuBarPluginKit.swiftmodule" \
+    -emit-module-interface-path "$FRAMEWORKS_DIR/MenuBarPluginKit.swiftinterface" \
     -emit-library \
     -Xlinker -install_name -Xlinker "@rpath/libMenuBarPluginKit.dylib" \
     -o "$FRAMEWORKS_DIR/libMenuBarPluginKit.dylib" \

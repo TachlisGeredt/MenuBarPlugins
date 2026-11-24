@@ -1,3 +1,5 @@
+import AppKit
+import Darwin
 import Foundation
 import MenuBarPluginKit
 
@@ -153,6 +155,86 @@ do {
 } catch {
     failed += 1
     fputs("FAIL: HostConfigFile test threw: \(error)\n", stderr)
+}
+
+// 6. Plugin contract & dynamic dlopen test (FixturePlugin)
+if CommandLine.arguments.count >= 2 {
+    let fixturePath = CommandLine.arguments[1]
+    let tempPluginDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("mbp-fixture-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempPluginDir) }
+
+    do {
+        try FileManager.default.createDirectory(at: tempPluginDir, withIntermediateDirectories: true)
+        let handle = dlopen(fixturePath, RTLD_NOW | RTLD_LOCAL)
+        assertTrue(handle != nil, "dlopen should succeed for FixturePlugin at \(fixturePath)")
+
+        if let handle {
+            // Check API version symbol
+            let versionSym = dlsym(handle, kMenuBarPluginAPIVersionSymbol)
+            assertTrue(versionSym != nil, "FixturePlugin should export \(kMenuBarPluginAPIVersionSymbol)")
+            if let versionSym {
+                typealias VersionFn = @convention(c) () -> Int32
+                let versionFn = unsafeBitCast(versionSym, to: VersionFn.self)
+                assertEqual(versionFn(), kMenuBarPluginAPIVersion, "FixturePlugin API version should match SDK")
+            }
+
+            // Instantiate via factory symbol
+            let sym = dlsym(handle, kMenuBarPluginFactorySymbol)
+            assertTrue(sym != nil, "FixturePlugin should export \(kMenuBarPluginFactorySymbol)")
+            if let sym {
+                typealias Factory = @convention(c) () -> UnsafeMutableRawPointer
+                let factory = unsafeBitCast(sym, to: Factory.self)
+                let obj = Unmanaged<AnyObject>.fromOpaque(factory()).takeRetainedValue()
+                let plugin = obj as? MenuBarPlugin
+                assertTrue(plugin != nil, "Factory should return a MenuBarPlugin")
+                assertEqual(plugin?.identifier ?? "", "com.test.fixture")
+
+                let scheduler = PluginScheduler(label: "com.test.fixture.scheduler")
+                var lastTitle: String?
+                var lastSymbol: String?
+                var lastImage: NSImage?
+                var lastTooltip: String?
+                var closedPopover = false
+
+                let ctx = PluginContext(
+                    pluginID: "com.test.fixture",
+                    pluginDirectoryURL: tempPluginDir,
+                    scheduler: scheduler,
+                    onSetTitle: { lastTitle = $0 },
+                    onSetSymbol: { sym, _ in lastSymbol = sym },
+                    onSetImage: { lastImage = $0 },
+                    onSetTooltip: { lastTooltip = $0 },
+                    onClosePopover: { closedPopover = true }
+                )
+
+                plugin?.activate(context: ctx)
+                assertEqual(lastTitle, "Fixture")
+                assertEqual(lastSymbol, "checkmark.circle")
+                assertTrue(lastImage != nil, "setImage callback should receive NSImage")
+                assertEqual(lastTooltip, "Fixture Tooltip")
+                assertTrue(FileManager.default.fileExists(atPath: ctx.dataDirectoryURL.path), "ensureDataDirectory should create Data/")
+                assertEqual(scheduler.activeTimerCount, 1, "scheduleRepeating should register 1 timer")
+
+                let menu = plugin?.buildMenu?() ?? []
+                assertEqual(menu.count, 4, "buildMenu should return label, separator, action, submenu")
+                menu[2].action?()
+                assertEqual(lastTitle, "Pong", "Menu action closure should update title")
+                menu[3].children.first?.action?()
+                assertEqual(lastTooltip, "Nested", "Submenu action closure should update tooltip")
+
+                assertTrue(plugin?.makePopoverViewController?() != nil, "makePopoverViewController should return NSViewController")
+                assertEqual(plugin?.preferredPopoverSize?(), NSSize(width: 240, height: 160))
+
+                plugin?.deactivate()
+                assertTrue(closedPopover, "deactivate should call closePopover")
+                assertEqual(scheduler.activeTimerCount, 0, "deactivate should cancel all timers")
+            }
+        }
+    } catch {
+        failed += 1
+        fputs("FAIL: FixturePlugin contract test threw: \(error)\n", stderr)
+    }
 }
 
 print("Tests finished: \(passed) passed, \(failed) failed.")

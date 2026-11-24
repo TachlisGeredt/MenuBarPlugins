@@ -12,6 +12,7 @@ struct DiscoveredPlugin {
 enum PluginLoadError: Error, LocalizedError {
     case missingExecutable(URL)
     case dlopenFailed(String)
+    case incompatibleAPIVersion(found: Int32, expected: Int32)
     case missingFactorySymbol(String)
     case invalidPluginInstance(String)
 
@@ -21,6 +22,8 @@ enum PluginLoadError: Error, LocalizedError {
             return "Plugin executable not found at \(url.path)"
         case .dlopenFailed(let message):
             return "Failed to load plugin library: \(message)"
+        case .incompatibleAPIVersion(let found, let expected):
+            return "Plugin built for API v\(found), but host requires API v\(expected) — please rebuild plugin"
         case .missingFactorySymbol(let symbol):
             return "Plugin does not export required symbol '\(symbol)'"
         case .invalidPluginInstance(let id):
@@ -32,6 +35,7 @@ enum PluginLoadError: Error, LocalizedError {
 /// Discovers self-contained plugin folders inside `Plugins/` and loads their `.dylib` binaries via `dlopen`/`dlsym`.
 final class PluginLoader {
     private typealias PluginFactoryFn = @convention(c) () -> UnsafeMutableRawPointer
+    private typealias PluginAPIVersionFn = @convention(c) () -> Int32
 
     /// Tracks opened library handles by resolved path.
     /// On macOS, ObjC/Swift dylibs should remain mapped once loaded to avoid ObjC runtime class-unload issues;
@@ -92,6 +96,14 @@ final class PluginLoader {
             }
             openHandles[execPath] = opened
             handle = opened
+        }
+
+        if let versionSym = dlsym(handle, kMenuBarPluginAPIVersionSymbol) {
+            let versionFn = unsafeBitCast(versionSym, to: PluginAPIVersionFn.self)
+            let pluginVersion = versionFn()
+            if pluginVersion != kMenuBarPluginAPIVersion {
+                throw PluginLoadError.incompatibleAPIVersion(found: pluginVersion, expected: kMenuBarPluginAPIVersion)
+            }
         }
 
         guard let sym = dlsym(handle, kMenuBarPluginFactorySymbol) else {

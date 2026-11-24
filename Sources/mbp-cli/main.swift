@@ -179,6 +179,8 @@ func describeRule(_ rule: ActivationRule) -> String {
         return "running(\(rule.bundleIdentifiers.joined(separator: ", ")))"
     case .whenAppActive:
         return "active(\(rule.bundleIdentifiers.joined(separator: ", ")))"
+    @unknown default:
+        return "custom"
     }
 }
 
@@ -251,6 +253,11 @@ func cmdNew(_ args: [String]) throws {
                 }
             ]
         }
+    }
+
+    @_cdecl("mbp_plugin_api_version")
+    public func pluginAPIVersion() -> Int32 {
+        kMenuBarPluginAPIVersion
     }
 
     @_cdecl("mbp_create_plugin")

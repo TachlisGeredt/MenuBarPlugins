@@ -1,0 +1,16 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build host app, SDK, and CLI
+        run: ./scripts/build-app.sh
+      - name: Run unit and plugin contract tests
+        run: ./scripts/run-tests.sh

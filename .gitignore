@@ -3,6 +3,7 @@ MenuBarPlugins.app/
 mbp
 *.dylib
 *.swiftmodule
+*.swiftinterface
 *.swiftdoc
 *.swiftsourceinfo
 *.dSYM/

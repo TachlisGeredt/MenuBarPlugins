@@ -56,9 +56,14 @@ Requires macOS 13+ and Apple Command Line Tools (`xcode-select --install` — fu
 # Launch the app (or double-click MenuBarPlugins.app in Finder)
 open MenuBarPlugins.app
 
-# Run automated tests
+# Run automated unit tests + plugin ABI/dlopen contract test
 ./scripts/run-tests.sh
 ```
+
+### Plugin Compatibility & CI
+- **ABI-stable SDK**: `libMenuBarPluginKit.dylib` is compiled with Swift Library Evolution (`-enable-library-evolution`), so additive framework updates keep already-compiled plugins working without rebuilding them.
+- **API Version Guard**: Plugins can export `mbp_plugin_api_version` (included automatically by `mbp new`) so intentional major API changes show a clear rebuild message instead of crashing.
+- **Automated Contract Tests & CI**: `./scripts/run-tests.sh` compiles and dynamically loads a reference `FixturePlugin` covering every public `MenuBarPluginKit` API, and [.github/workflows/ci.yml](.github/workflows/ci.yml) runs the full build and test suite on every push and pull request.
 
 Once running, manage plugins from the **puzzle-piece icon** (when 0 plugins are active), from **Manage Icons ▸** at the bottom of any active plugin's menu, or via the `mbp` CLI.
 

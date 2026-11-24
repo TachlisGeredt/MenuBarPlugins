@@ -52,6 +52,9 @@ enum MenuBuilder {
                 item.representedObject = trampoline
             }
             return item
+
+        @unknown default:
+            return NSMenuItem.separator()
         }
     }
 }
