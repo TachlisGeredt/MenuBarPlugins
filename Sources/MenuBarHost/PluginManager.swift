@@ -29,10 +29,17 @@ final class PluginManager {
     private let scheduler = PluginScheduler()
     private var directoryWatcher: DirectoryWatcher?
     private var powerMonitor: PowerStateMonitor?
+    private var distributedObservers: [NSObjectProtocol] = []
 
     private var discovered: [String: DiscoveredPlugin] = [:]
     private var active: [String: ActiveInstance] = [:]
     private var loadErrors: [String: String] = [:]
+
+    /// Called whenever active plugins or host settings change (used to update puzzle icon visibility).
+    var onStateChanged: (() -> Void)?
+
+    /// Provides the lazy "Manage Icons ▸" submenu attached to every active plugin's menu.
+    var makeManageMenuItem: (() -> NSMenuItem)?
 
     init(cliPluginsDirectory: String? = nil) {
         self.configStore = HostConfigStore(cliPluginsDirectory: cliPluginsDirectory)
@@ -48,16 +55,54 @@ final class PluginManager {
             onSuspend: { [weak self] in self?.scheduler.pauseAll() },
             onResume: { [weak self] in self?.scheduler.resumeAll() }
         )
-
-        self.directoryWatcher = DirectoryWatcher(url: configStore.pluginsDirectoryURL) { [weak self] in
-            self?.reloadAll()
-        }
-
-        reloadAll()
     }
 
     deinit {
+        let dnc = DistributedNotificationCenter.default()
+        for token in distributedObservers {
+            dnc.removeObserver(token)
+        }
+        distributedObservers.removeAll()
         deactivateAll()
+    }
+
+    /// Starts directory watching, CLI notification observers, and initial plugin discovery.
+    func start() {
+        self.directoryWatcher = DirectoryWatcher(url: configStore.pluginsDirectoryURL) { [weak self] in
+            self?.reloadAll()
+        }
+        registerDistributedObservers()
+        reloadAll()
+    }
+
+    private func registerDistributedObservers() {
+        let dnc = DistributedNotificationCenter.default()
+
+        let reloadConfigToken = dnc.addObserver(
+            forName: HostNotification.reloadConfig,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.reloadConfigFromDisk()
+        }
+
+        let reloadPluginsToken = dnc.addObserver(
+            forName: HostNotification.reloadPlugins,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.reloadAll()
+        }
+
+        let quitToken = dnc.addObserver(
+            forName: HostNotification.quit,
+            object: nil,
+            queue: .main
+        ) { _ in
+            NSApp.terminate(nil)
+        }
+
+        distributedObservers = [reloadConfigToken, reloadPluginsToken, quitToken]
     }
 
     // MARK: - Public API for HostMenuController
@@ -68,6 +113,14 @@ final class PluginManager {
 
     var configFileURL: URL {
         configStore.configFileURL
+    }
+
+    var activePluginCount: Int {
+        active.count
+    }
+
+    var persistentIcon: Bool {
+        configStore.persistentIcon
     }
 
     func summaries() -> [PluginSummary] {
@@ -91,6 +144,11 @@ final class PluginManager {
             }
     }
 
+    func setPersistentIcon(_ enabled: Bool) {
+        configStore.setPersistentIcon(enabled)
+        onStateChanged?()
+    }
+
     func setEnabled(_ enabled: Bool, for pluginID: String) {
         configStore.setPluginEnabled(enabled, for: pluginID)
         reevaluateActivations()
@@ -109,6 +167,21 @@ final class PluginManager {
         configStore.ensurePluginsDirectoryExists()
         directoryWatcher?.restart(watching: configStore.pluginsDirectoryURL)
         reloadAll()
+    }
+
+    func reloadConfigFromDisk() {
+        let previousPluginsDir = configStore.pluginsDirectoryURL
+        configStore.reloadFromDisk()
+        if configStore.pluginsDirectoryURL != previousPluginsDir {
+            deactivateAll()
+            discovered.removeAll()
+            loadErrors.removeAll()
+            configStore.ensurePluginsDirectoryExists()
+            directoryWatcher?.restart(watching: configStore.pluginsDirectoryURL)
+            reloadAll()
+        } else {
+            reevaluateActivations()
+        }
     }
 
     func reloadAll() {
@@ -130,6 +203,7 @@ final class PluginManager {
             deactivatePlugin(id: id)
         }
         scheduler.cancelAll()
+        onStateChanged?()
     }
 
     // MARK: - Conditional Activation Engine
@@ -149,13 +223,19 @@ final class PluginManager {
                 deactivatePlugin(id: id)
             }
         }
+
+        onStateChanged?()
     }
 
     private func activatePlugin(_ item: DiscoveredPlugin) {
         let id = item.manifest.id
         do {
             let plugin = try loader.instantiate(item)
-            let statusController = StatusItemController(plugin: plugin, defaultTitle: item.manifest.name)
+            let statusController = StatusItemController(
+                plugin: plugin,
+                defaultTitle: item.manifest.name,
+                makeManageMenuItem: makeManageMenuItem
+            )
 
             let context = PluginContext(
                 pluginID: id,

@@ -10,7 +10,16 @@ func printUsage() {
       mbp build <PluginDir> [--sdk-dir <dir>] Compile a plugin's Swift sources into a .dylib
       mbp install <PluginDir> [--plugins-dir <dir>]
                                               Install a self-contained plugin folder into Plugins/
-      mbp list [--plugins-dir <dir>]          List installed plugins in Plugins/
+      mbp list [--plugins-dir <dir>]          List installed plugins and host settings
+      mbp <plugin> enable                     Enable a plugin (by ID, name, or folder)
+      mbp <plugin> disable                    Disable a plugin (by ID, name, or folder)
+      mbp <plugin> rule always                Always active when enabled
+      mbp <plugin> rule running <bundleID...> Active only while any listed app is running
+      mbp <plugin> rule active <bundleID...>  Active only while any listed app is focused
+      mbp <plugin> rule default               Reset to the plugin's manifest default rule
+      mbp persistent-icon [on|off]            Show or set fallback puzzle icon (default: on)
+      mbp reload                              Ask running MenuBarPlugins.app to reload Plugins/
+      mbp quit                                Ask running MenuBarPlugins.app to quit
     """
     print(text)
 }
@@ -20,15 +29,77 @@ func flagValue(_ flag: String, in args: [String]) -> String? {
     return args[idx + 1]
 }
 
-func defaultPluginsDir(from args: [String]) -> URL {
+func stripFlags(_ args: [String], valuedFlags: Set<String> = ["--plugins-dir", "--config", "--sdk-dir"]) -> [String] {
+    var result: [String] = []
+    var i = 0
+    while i < args.count {
+        if valuedFlags.contains(args[i]) {
+            i += 2
+            continue
+        }
+        result.append(args[i])
+        i += 1
+    }
+    return result
+}
+
+/// Resolves the portable MenuBarPlugins root directory.
+/// When `mbp` is symlinked into PATH (e.g. ~/.local/bin/mbp -> <Root>/mbp), resolves through the symlink.
+func resolvePortableRoot() -> URL {
+    let fm = FileManager.default
+    if let execURL = Bundle.main.executableURL?.resolvingSymlinksInPath() {
+        let execDir = execURL.deletingLastPathComponent()
+        let appURL = execDir.appendingPathComponent("MenuBarPlugins.app", isDirectory: true)
+        if fm.fileExists(atPath: appURL.path) {
+            return execDir
+        }
+    }
+    return URL(fileURLWithPath: fm.currentDirectoryPath, isDirectory: true)
+}
+
+func resolveConfigURL(from args: [String]) -> URL {
+    if let explicit = flagValue("--config", in: args) {
+        return URL(fileURLWithPath: (explicit as NSString).expandingTildeInPath, isDirectory: false)
+    }
+    return resolvePortableRoot().appendingPathComponent("config.json", isDirectory: false)
+}
+
+func loadHostConfig(at url: URL) -> HostConfigFile {
+    if let data = try? Data(contentsOf: url),
+       let decoded = try? JSONDecoder().decode(HostConfigFile.self, from: data) {
+        return decoded
+    }
+    return HostConfigFile()
+}
+
+func saveHostConfig(_ config: HostConfigFile, to url: URL) throws {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let data = try encoder.encode(config)
+    try data.write(to: url, options: .atomic)
+}
+
+func postHostNotification(_ name: Notification.Name) {
+    DistributedNotificationCenter.default().postNotificationName(
+        name,
+        object: nil,
+        userInfo: nil,
+        deliverImmediately: true
+    )
+}
+
+func defaultPluginsDir(from args: [String], config: HostConfigFile? = nil) -> URL {
     if let explicit = flagValue("--plugins-dir", in: args) {
         return URL(fileURLWithPath: (explicit as NSString).expandingTildeInPath, isDirectory: true)
     }
     if let env = ProcessInfo.processInfo.environment["MBP_PLUGINS_DIR"], !env.isEmpty {
         return URL(fileURLWithPath: (env as NSString).expandingTildeInPath, isDirectory: true)
     }
-    return URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-        .appendingPathComponent("Plugins", isDirectory: true)
+    let cfg = config ?? loadHostConfig(at: resolveConfigURL(from: args))
+    if let custom = cfg.customPluginsDirectory, !custom.isEmpty {
+        return URL(fileURLWithPath: (custom as NSString).expandingTildeInPath, isDirectory: true)
+    }
+    return resolvePortableRoot().appendingPathComponent("Plugins", isDirectory: true)
 }
 
 func resolveSDKDir(from args: [String]) -> URL? {
@@ -36,8 +107,10 @@ func resolveSDKDir(from args: [String]) -> URL? {
     if let explicit = flagValue("--sdk-dir", in: args) {
         return URL(fileURLWithPath: (explicit as NSString).expandingTildeInPath, isDirectory: true)
     }
+    let root = resolvePortableRoot()
     let cwd = URL(fileURLWithPath: fm.currentDirectoryPath, isDirectory: true)
     let candidates = [
+        root.appendingPathComponent("MenuBarPlugins.app/Contents/Frameworks", isDirectory: true),
         cwd.appendingPathComponent("MenuBarPlugins.app/Contents/Frameworks", isDirectory: true)
     ]
     for dir in candidates {
@@ -49,23 +122,86 @@ func resolveSDKDir(from args: [String]) -> URL? {
     return nil
 }
 
+struct InstalledPluginInfo {
+    let manifest: PluginManifest
+    let folderName: String
+}
+
+func discoverInstalledPlugins(in pluginsDir: URL) -> [InstalledPluginInfo] {
+    let fm = FileManager.default
+    guard let entries = try? fm.contentsOfDirectory(
+        at: pluginsDir,
+        includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles]
+    ) else {
+        return []
+    }
+
+    var results: [InstalledPluginInfo] = []
+    for dir in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+        let manifestURL = dir.appendingPathComponent("manifest.json")
+        guard fm.fileExists(atPath: manifestURL.path) else { continue }
+        if let manifest = try? PluginManifest.load(from: manifestURL) {
+            results.append(InstalledPluginInfo(manifest: manifest, folderName: dir.lastPathComponent))
+        }
+    }
+    return results
+}
+
+func resolvePluginIdentifier(_ query: String, in pluginsDir: URL) -> (id: String, displayName: String) {
+    let installed = discoverInstalledPlugins(in: pluginsDir)
+    let lowered = query.lowercased()
+
+    if let match = installed.first(where: { $0.manifest.id == query }) {
+        return (match.manifest.id, match.manifest.name)
+    }
+    if let match = installed.first(where: { $0.folderName.lowercased() == lowered }) {
+        return (match.manifest.id, match.manifest.name)
+    }
+    if let match = installed.first(where: { $0.manifest.name.lowercased() == lowered }) {
+        return (match.manifest.id, match.manifest.name)
+    }
+
+    // Allow targeting a plugin ID directly even if not currently installed in Plugins/
+    if query.contains(".") {
+        return (query, query)
+    }
+
+    fputs("Error: Plugin '\(query)' not found in \(pluginsDir.path).\n", stderr)
+    exit(1)
+}
+
+func describeRule(_ rule: ActivationRule) -> String {
+    switch rule.mode {
+    case .always:
+        return "always"
+    case .whenAppRunning:
+        return "running(\(rule.bundleIdentifiers.joined(separator: ", ")))"
+    case .whenAppActive:
+        return "active(\(rule.bundleIdentifiers.joined(separator: ", ")))"
+    }
+}
+
 func sanitizeIdentifier(_ name: String) -> String {
     let allowed = CharacterSet.alphanumerics
     let cleaned = name.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
     return String(cleaned).lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "-"))
 }
 
+// MARK: - Subcommands
+
 func cmdNew(_ args: [String]) throws {
-    guard args.count >= 1 else {
+    let positional = stripFlags(args)
+    guard positional.count >= 1 else {
         fputs("Error: Missing <PluginName>.\n", stderr)
         printUsage()
         exit(1)
     }
-    let rawName = args[0]
+    let rawName = positional[0]
     let className = rawName.replacingOccurrences(of: " ", with: "") + "Plugin"
     let libName = "lib\(rawName.replacingOccurrences(of: " ", with: "")).dylib"
-    let baseDir = args.count >= 2
-        ? URL(fileURLWithPath: (args[1] as NSString).expandingTildeInPath, isDirectory: true)
+    let baseDir = positional.count >= 2
+        ? URL(fileURLWithPath: (positional[1] as NSString).expandingTildeInPath, isDirectory: true)
         : URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
     let pluginDir = baseDir.appendingPathComponent(rawName, isDirectory: true)
     let sourcesDir = pluginDir.appendingPathComponent("Sources", isDirectory: true)
@@ -133,11 +269,12 @@ func cmdNew(_ args: [String]) throws {
 }
 
 func cmdBuild(_ args: [String]) throws {
-    guard args.count >= 1 else {
+    let positional = stripFlags(args)
+    guard positional.count >= 1 else {
         fputs("Error: Missing <PluginDir>.\n", stderr)
         exit(1)
     }
-    let pluginDir = URL(fileURLWithPath: (args[0] as NSString).expandingTildeInPath, isDirectory: true)
+    let pluginDir = URL(fileURLWithPath: (positional[0] as NSString).expandingTildeInPath, isDirectory: true)
     let manifestURL = pluginDir.appendingPathComponent("manifest.json")
     let manifest = try PluginManifest.load(from: manifestURL)
 
@@ -187,11 +324,12 @@ func cmdBuild(_ args: [String]) throws {
 }
 
 func cmdInstall(_ args: [String]) throws {
-    guard args.count >= 1 else {
+    let positional = stripFlags(args)
+    guard positional.count >= 1 else {
         fputs("Error: Missing <PluginDir>.\n", stderr)
         exit(1)
     }
-    let srcDir = URL(fileURLWithPath: (args[0] as NSString).expandingTildeInPath, isDirectory: true)
+    let srcDir = URL(fileURLWithPath: (positional[0] as NSString).expandingTildeInPath, isDirectory: true)
     let manifestURL = srcDir.appendingPathComponent("manifest.json")
     let manifest = try PluginManifest.load(from: manifestURL)
     let dylibURL = srcDir.appendingPathComponent(manifest.executable)
@@ -219,8 +357,13 @@ func cmdInstall(_ args: [String]) throws {
 }
 
 func cmdList(_ args: [String]) throws {
-    let pluginsDir = defaultPluginsDir(from: args)
+    let configURL = resolveConfigURL(from: args)
+    let config = loadHostConfig(at: configURL)
+    let pluginsDir = defaultPluginsDir(from: args, config: config)
     let fm = FileManager.default
+
+    print("Persistent icon: \(config.persistentIcon ? "on" : "off")")
+
     guard let entries = try? fm.contentsOfDirectory(
         at: pluginsDir,
         includingPropertiesForKeys: [.isDirectoryKey],
@@ -236,8 +379,11 @@ func cmdList(_ args: [String]) throws {
         guard fm.fileExists(atPath: manifestURL.path) else { continue }
         do {
             let m = try PluginManifest.load(from: manifestURL)
-            let rule = m.activation?.mode.rawValue ?? "always"
-            print("• \(m.name) (\(m.id)) v\(m.version) [\(rule)] — \(dir.lastPathComponent)/")
+            let userCfg = config.plugins[m.id]
+            let enabled = userCfg?.enabled ?? true
+            let rule = userCfg?.activationOverride ?? m.activation ?? .always
+            let stateLabel = enabled ? "enabled" : "disabled"
+            print("• \(m.name) (\(m.id)) v\(m.version) [\(stateLabel), \(describeRule(rule))] — \(dir.lastPathComponent)/")
             count += 1
         } catch {
             print("! \(dir.lastPathComponent)/ — invalid manifest: \(error.localizedDescription)")
@@ -249,6 +395,100 @@ func cmdList(_ args: [String]) throws {
     }
 }
 
+func cmdPersistentIcon(_ args: [String]) throws {
+    let configURL = resolveConfigURL(from: args)
+    var config = loadHostConfig(at: configURL)
+    let positional = stripFlags(args)
+
+    guard let value = positional.first?.lowercased() else {
+        print("Persistent icon: \(config.persistentIcon ? "on" : "off")")
+        return
+    }
+
+    switch value {
+    case "on", "true", "1", "yes":
+        config.persistentIcon = true
+    case "off", "false", "0", "no":
+        config.persistentIcon = false
+    default:
+        fputs("Error: Expected 'on' or 'off', got '\(value)'.\n", stderr)
+        exit(1)
+    }
+
+    try saveHostConfig(config, to: configURL)
+    postHostNotification(HostNotification.reloadConfig)
+    print("Persistent icon set to: \(config.persistentIcon ? "on" : "off")")
+}
+
+func cmdPluginAction(pluginQuery: String, action: String, rest: [String]) throws {
+    let configURL = resolveConfigURL(from: rest)
+    var config = loadHostConfig(at: configURL)
+    let pluginsDir = defaultPluginsDir(from: rest, config: config)
+    let resolved = resolvePluginIdentifier(pluginQuery, in: pluginsDir)
+    var entry = config.plugins[resolved.id] ?? PluginUserConfig()
+
+    switch action {
+    case "enable":
+        entry.enabled = true
+        config.plugins[resolved.id] = entry
+        try saveHostConfig(config, to: configURL)
+        postHostNotification(HostNotification.reloadConfig)
+        print("Enabled \(resolved.displayName) (\(resolved.id))")
+
+    case "disable":
+        entry.enabled = false
+        config.plugins[resolved.id] = entry
+        try saveHostConfig(config, to: configURL)
+        postHostNotification(HostNotification.reloadConfig)
+        print("Disabled \(resolved.displayName) (\(resolved.id))")
+
+    case "rule":
+        let positional = stripFlags(rest)
+        guard let modeArg = positional.first?.lowercased() else {
+            let effective = entry.activationOverride ?? .always
+            print("\(resolved.displayName) rule: \(describeRule(effective))\(entry.activationOverride == nil ? " (default)" : "")")
+            return
+        }
+        let bundleIDs = Array(positional.dropFirst())
+        switch modeArg {
+        case "always":
+            entry.activationOverride = .always
+        case "running":
+            guard !bundleIDs.isEmpty else {
+                fputs("Error: Specify at least one bundle identifier (e.g. com.apple.Safari).\n", stderr)
+                exit(1)
+            }
+            entry.activationOverride = ActivationRule(mode: .whenAppRunning, bundleIdentifiers: bundleIDs)
+        case "active":
+            guard !bundleIDs.isEmpty else {
+                fputs("Error: Specify at least one bundle identifier (e.g. com.apple.Safari).\n", stderr)
+                exit(1)
+            }
+            entry.activationOverride = ActivationRule(mode: .whenAppActive, bundleIdentifiers: bundleIDs)
+        case "default", "reset":
+            entry.activationOverride = nil
+        default:
+            fputs("Error: Unknown rule '\(modeArg)'. Use: always, running <bundleID...>, active <bundleID...>, or default.\n", stderr)
+            exit(1)
+        }
+        config.plugins[resolved.id] = entry
+        try saveHostConfig(config, to: configURL)
+        postHostNotification(HostNotification.reloadConfig)
+        if let override = entry.activationOverride {
+            print("Set rule for \(resolved.displayName) (\(resolved.id)): \(describeRule(override))")
+        } else {
+            print("Reset rule for \(resolved.displayName) (\(resolved.id)) to plugin default")
+        }
+
+    default:
+        fputs("Error: Unknown plugin action '\(action)'. Use: enable, disable, or rule.\n", stderr)
+        printUsage()
+        exit(1)
+    }
+}
+
+// MARK: - Main Dispatch
+
 do {
     let args = Array(CommandLine.arguments.dropFirst())
     guard let command = args.first else {
@@ -256,6 +496,7 @@ do {
         exit(0)
     }
     let rest = Array(args.dropFirst())
+
     switch command {
     case "new":
         try cmdNew(rest)
@@ -265,12 +506,24 @@ do {
         try cmdInstall(rest)
     case "list":
         try cmdList(rest)
+    case "persistent-icon":
+        try cmdPersistentIcon(rest)
+    case "reload":
+        postHostNotification(HostNotification.reloadPlugins)
+        print("Sent reload notification to MenuBarPlugins.")
+    case "quit":
+        postHostNotification(HostNotification.quit)
+        print("Sent quit notification to MenuBarPlugins.")
     case "-h", "--help", "help":
         printUsage()
     default:
-        fputs("Unknown command: \(command)\n", stderr)
-        printUsage()
-        exit(1)
+        // Plugin-scoped syntax: mbp <plugin> enable|disable|rule ...
+        guard let action = rest.first else {
+            fputs("Unknown command: \(command)\n", stderr)
+            printUsage()
+            exit(1)
+        }
+        try cmdPluginAction(pluginQuery: command, action: action, rest: Array(rest.dropFirst()))
     }
 } catch {
     fputs("Error: \(error.localizedDescription)\n", stderr)

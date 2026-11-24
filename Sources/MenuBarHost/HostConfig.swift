@@ -1,28 +1,6 @@
 import Foundation
 import MenuBarPluginKit
 
-/// Per-plugin user preferences stored in portable `config.json`.
-struct PluginUserConfig: Codable, Equatable {
-    var enabled: Bool
-    var activationOverride: ActivationRule?
-
-    init(enabled: Bool = true, activationOverride: ActivationRule? = nil) {
-        self.enabled = enabled
-        self.activationOverride = activationOverride
-    }
-}
-
-/// Portable configuration file saved alongside `MenuBarPlugins.app` at `<Root>/config.json`.
-struct HostConfigFile: Codable, Equatable {
-    var customPluginsDirectory: String?
-    var plugins: [String: PluginUserConfig]
-
-    init(customPluginsDirectory: String? = nil, plugins: [String: PluginUserConfig] = [:]) {
-        self.customPluginsDirectory = customPluginsDirectory
-        self.plugins = plugins
-    }
-}
-
 /// Manages portable paths (`Plugins/`, `config.json`) without forcing `~/Library/Application Support/`.
 final class HostConfigStore {
     let rootDirectoryURL: URL
@@ -42,12 +20,8 @@ final class HostConfigStore {
             self.cliPluginsDirectoryOverride = nil
         }
 
-        if let data = try? Data(contentsOf: configFileURL),
-           let decoded = try? JSONDecoder().decode(HostConfigFile.self, from: data) {
-            self.config = decoded
-        } else {
-            self.config = HostConfigFile()
-        }
+        self.config = HostConfigFile()
+        reloadFromDisk()
     }
 
     /// Resolves the portable folder containing `MenuBarPlugins.app` (or current working directory for CLI runs).
@@ -59,6 +33,16 @@ final class HostConfigStore {
         return URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
     }
 
+    /// Re-reads `config.json` from disk (e.g., after external CLI edits).
+    func reloadFromDisk() {
+        if let data = try? Data(contentsOf: configFileURL),
+           let decoded = try? JSONDecoder().decode(HostConfigFile.self, from: data) {
+            self.config = decoded
+        } else {
+            self.config = HostConfigFile()
+        }
+    }
+
     /// Active `Plugins/` directory: CLI/env override > user-chosen folder > `<Root>/Plugins/`.
     var pluginsDirectoryURL: URL {
         if let cliOverride = cliPluginsDirectoryOverride {
@@ -68,6 +52,15 @@ final class HostConfigStore {
             return URL(fileURLWithPath: (custom as NSString).expandingTildeInPath, isDirectory: true)
         }
         return rootDirectoryURL.appendingPathComponent("Plugins", isDirectory: true)
+    }
+
+    var persistentIcon: Bool {
+        config.persistentIcon
+    }
+
+    func setPersistentIcon(_ enabled: Bool) {
+        config.persistentIcon = enabled
+        save()
     }
 
     func ensurePluginsDirectoryExists() {

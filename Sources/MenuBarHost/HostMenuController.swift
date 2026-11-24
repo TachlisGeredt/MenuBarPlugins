@@ -2,33 +2,82 @@ import AppKit
 import MenuBarPluginKit
 import ServiceManagement
 
-/// Master framework menu bar icon providing plugin toggles, in-menu app-activation rules, and folder controls.
+/// Master framework menu controller providing conditional puzzle-icon visibility,
+/// the "Manage Icons ▸" submenu for active plugins, per-plugin rules, and host settings.
 final class HostMenuController: NSObject, NSMenuDelegate {
-    private let statusItem: NSStatusItem
+    private var statusItem: NSStatusItem?
     private let menu: NSMenu
     private let manager: PluginManager
 
     init(manager: PluginManager) {
         self.manager = manager
-        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         self.menu = NSMenu(title: "MenuBarPlugins")
         super.init()
 
-        if let button = statusItem.button {
-            let img = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: "MenuBarPlugins")
-            img?.isTemplate = true
-            button.image = img
-            button.toolTip = "MenuBarPlugins"
-        }
-
         menu.delegate = self
         menu.autoenablesItems = false
-        statusItem.menu = menu
+
+        manager.onStateChanged = { [weak self] in
+            self?.updateStatusItemVisibility()
+        }
+        manager.makeManageMenuItem = { [weak self] in
+            self?.makeManageIconsMenuItem() ?? NSMenuItem()
+        }
+
+        updateStatusItemVisibility()
+    }
+
+    deinit {
+        if let existing = statusItem {
+            NSStatusBar.system.removeStatusItem(existing)
+            statusItem = nil
+        }
+    }
+
+    /// Shows the puzzle icon iff `persistentIcon` is ON and 0 plugin icons are currently active.
+    func updateStatusItemVisibility() {
+        let shouldShow = manager.persistentIcon && manager.activePluginCount == 0
+
+        if shouldShow {
+            guard statusItem == nil else { return }
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+            if let button = item.button {
+                let img = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: "MenuBarPlugins")
+                img?.isTemplate = true
+                button.image = img
+                button.toolTip = "MenuBarPlugins"
+            }
+            item.menu = menu
+            statusItem = item
+        } else if let existing = statusItem {
+            menu.removeAllItems()
+            NSStatusBar.system.removeStatusItem(existing)
+            statusItem = nil
+        }
+    }
+
+    /// Builds a lazy "Manage Icons ▸" submenu item embedded at the bottom of active plugin menus.
+    func makeManageIconsMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Manage Icons", action: nil, keyEquivalent: "")
+        item.image = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: "Manage Icons")
+        let sub = NSMenu(title: "Manage Icons")
+        sub.delegate = self
+        sub.autoenablesItems = false
+        item.submenu = sub
+        return item
     }
 
     // MARK: - NSMenuDelegate (Lazy Menu Construction)
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        populateManagementMenu(menu)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        menu.removeAllItems()
+    }
+
+    private func populateManagementMenu(_ menu: NSMenu) {
         menu.removeAllItems()
 
         let header = NSMenuItem(title: "MenuBarPlugins", action: nil, keyEquivalent: "")
@@ -69,19 +118,35 @@ final class HostMenuController: NSObject, NSMenuDelegate {
         })
 
         menu.addItem(.separator())
-
-        let isLoginEnabled = SMAppService.mainApp.status == .enabled
-        menu.addItem(makeActionItem(title: "Launch at Login", checked: isLoginEnabled) { [weak self] in
-            self?.toggleLaunchAtLogin()
-        })
+        menu.addItem(makeSettingsSubmenuItem())
 
         menu.addItem(makeActionItem(title: "Quit MenuBarPlugins", symbol: "power", keyEquivalent: "q") {
             NSApp.terminate(nil)
         })
     }
 
-    func menuDidClose(_ menu: NSMenu) {
-        menu.removeAllItems()
+    // MARK: - Settings Submenu
+
+    private func makeSettingsSubmenuItem() -> NSMenuItem {
+        let settingsItem = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
+        settingsItem.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")
+
+        let sub = NSMenu(title: "Settings")
+        sub.autoenablesItems = false
+
+        let isPersistent = manager.persistentIcon
+        sub.addItem(makeActionItem(title: "Persistent Icon", checked: isPersistent) { [weak self] in
+            guard let self else { return }
+            self.manager.setPersistentIcon(!self.manager.persistentIcon)
+        })
+
+        let isLoginEnabled = SMAppService.mainApp.status == .enabled
+        sub.addItem(makeActionItem(title: "Launch at Login", checked: isLoginEnabled) { [weak self] in
+            self?.toggleLaunchAtLogin()
+        })
+
+        settingsItem.submenu = sub
+        return settingsItem
     }
 
     // MARK: - Per-Plugin Submenu

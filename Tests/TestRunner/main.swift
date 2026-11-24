@@ -119,5 +119,41 @@ do {
     assertEqual(scheduler.activeTimerCount, 0)
 }
 
+// 5. HostConfigFile defaults & round-trip persistence
+do {
+    // Legacy config.json without `persistentIcon` should default to `true`.
+    let legacyJSON = """
+    {
+      "plugins": {
+        "com.example.demo": {
+          "enabled": false
+        }
+      }
+    }
+    """
+    let legacy = try JSONDecoder().decode(HostConfigFile.self, from: Data(legacyJSON.utf8))
+    assertTrue(legacy.persistentIcon, "Legacy config without persistentIcon should default to true")
+    assertEqual(legacy.plugins["com.example.demo"]?.enabled, false)
+
+    // Round-trip with persistentIcon = false and activationOverride
+    let original = HostConfigFile(
+        customPluginsDirectory: "/tmp/custom-plugins",
+        persistentIcon: false,
+        plugins: [
+            "com.example.demo": PluginUserConfig(
+                enabled: true,
+                activationOverride: ActivationRule(mode: .whenAppActive, bundleIdentifiers: ["com.apple.Safari"])
+            )
+        ]
+    )
+    let encoded = try JSONEncoder().encode(original)
+    let decoded = try JSONDecoder().decode(HostConfigFile.self, from: encoded)
+    assertEqual(decoded, original, "HostConfigFile should round-trip cleanly")
+    assertTrue(!decoded.persistentIcon, "persistentIcon should persist false")
+} catch {
+    failed += 1
+    fputs("FAIL: HostConfigFile test threw: \(error)\n", stderr)
+}
+
 print("Tests finished: \(passed) passed, \(failed) failed.")
 exit(failed == 0 ? 0 : 1)

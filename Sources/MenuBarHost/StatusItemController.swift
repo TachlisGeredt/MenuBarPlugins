@@ -63,9 +63,15 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     private let lazyMenu: NSMenu
     private var popover: NSPopover?
     private let supportsPopover: Bool
+    private let makeManageMenuItem: (() -> NSMenuItem)?
 
-    init(plugin: MenuBarPlugin, defaultTitle: String) {
+    init(
+        plugin: MenuBarPlugin,
+        defaultTitle: String,
+        makeManageMenuItem: (() -> NSMenuItem)? = nil
+    ) {
         self.plugin = plugin
+        self.makeManageMenuItem = makeManageMenuItem
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.lazyMenu = NSMenu()
         self.supportsPopover = (plugin as AnyObject).responds(to: #selector(MenuBarPlugin.makePopoverViewController))
@@ -125,18 +131,32 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
 
     // MARK: - Popover / Right-Click Handling
 
+    private func populateMenu(_ menu: NSMenu) {
+        let items = plugin?.buildMenu?() ?? []
+        MenuBuilder.populate(menu, with: items)
+        if let makeManageMenuItem {
+            if !menu.items.isEmpty {
+                menu.addItem(.separator())
+            }
+            menu.addItem(makeManageMenuItem())
+        }
+    }
+
+    private func showPopupMenu() {
+        populateMenu(lazyMenu)
+        guard !lazyMenu.items.isEmpty else { return }
+        statusItem.menu = lazyMenu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
     @objc private func handleStatusButtonClick(_ sender: NSStatusBarButton) {
         let event = NSApp.currentEvent
         let isRightClick = event?.type == .rightMouseUp || (event?.modifierFlags.contains(.control) ?? false)
 
         if isRightClick {
             closePopover()
-            if let items = plugin?.buildMenu?(), !items.isEmpty {
-                MenuBuilder.populate(lazyMenu, with: items)
-                statusItem.menu = lazyMenu
-                statusItem.button?.performClick(nil)
-                statusItem.menu = nil
-            }
+            showPopupMenu()
             return
         }
 
@@ -150,13 +170,8 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         }
 
         guard let vc = plugin?.makePopoverViewController?() else {
-            // Plugin returned nil for popover; fall back to menu if available.
-            if let items = plugin?.buildMenu?(), !items.isEmpty {
-                MenuBuilder.populate(lazyMenu, with: items)
-                statusItem.menu = lazyMenu
-                statusItem.button?.performClick(nil)
-                statusItem.menu = nil
-            }
+            // Plugin returned nil for popover; fall back to menu.
+            showPopupMenu()
             return
         }
 
@@ -184,11 +199,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     // MARK: - NSMenuDelegate
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        guard let items = plugin?.buildMenu?() else {
-            menu.removeAllItems()
-            return
-        }
-        MenuBuilder.populate(menu, with: items)
+        populateMenu(menu)
     }
 
     func menuDidClose(_ menu: NSMenu) {

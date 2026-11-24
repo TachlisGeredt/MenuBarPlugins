@@ -9,8 +9,11 @@ An ultra-lightweight, open, and modular macOS menu bar plugin framework built in
 `MenuBarPlugins` lets you run small, modular plugins directly in your macOS menu bar while using minimal CPU and RAM:
 
 - **One tiny host app (`MenuBarPlugins.app`)**: Runs silently in the background (`LSUIElement = true`, no Dock icon) and gives each active plugin its own menu bar icon.
-- **Master control icon**: Click the **puzzle-piece icon** in the top-right macOS menu bar to enable/disable plugins, set app-specific activation rules, reload plugins, toggle **Launch at Login**, or quit.
-- **App-specific activation rules**: Any plugin can be configured—either in `config.json` or directly from the menu bar—to only run when a specific app is **running** (`whenAppRunning`) or **currently focused** (`whenAppActive`). When the condition isn't met, the plugin is deactivated and hidden from your menu bar.
+- **Zero-clutter control menu**:
+  - When **no plugins are active**, a **puzzle-piece icon** appears in the menu bar (controlled by **Settings ▸ Persistent Icon**, on by default).
+  - As soon as **one or more plugins are active**, the puzzle icon automatically hides and every active plugin's menu includes a **Manage Icons ▸** submenu at the bottom with all host controls.
+  - Turn **Settings ▸ Persistent Icon** off to never show the puzzle icon, even when 0 plugins are active.
+- **App-specific activation rules**: Any plugin can be configured—via the menu bar, the `mbp` CLI, or `config.json`—to only run when a specific app is **running** (`whenAppRunning`) or **currently focused** (`whenAppActive`). When the condition isn't met, the plugin is deactivated and hidden from your menu bar.
 - **100% portable & self-contained**: Move the `MenuBarPlugins` folder anywhere on your Mac. Nothing is written to `~/Library/Application Support/`.
 
 ---
@@ -57,7 +60,49 @@ open MenuBarPlugins.app
 ./scripts/run-tests.sh
 ```
 
-Once running, click the **puzzle-piece icon** in the top-right menu bar to manage plugins or enable **Launch at Login**.
+Once running, manage plugins from the **puzzle-piece icon** (when 0 plugins are active), from **Manage Icons ▸** at the bottom of any active plugin's menu, or via the `mbp` CLI.
+
+### Optional: Add `mbp` to your `PATH`
+
+Symlink `mbp` (do not copy it) so it stays next to `MenuBarPlugins.app` and works from any directory:
+
+```bash
+# User-local (no sudo; ensure ~/.local/bin is in your PATH)
+mkdir -p ~/.local/bin && ln -sf "$PWD/mbp" ~/.local/bin/mbp
+
+# Or system-wide (already in default macOS PATH)
+sudo ln -sf "$PWD/mbp" /usr/local/bin/mbp
+```
+
+---
+
+## Managing Plugins via CLI
+
+All `mbp` management commands update `config.json` and notify a running `MenuBarPlugins.app` live:
+
+```bash
+# List installed plugins, their enabled/rule status, and Persistent Icon setting
+mbp list
+
+# Enable or disable a plugin (matches plugin ID, name, or folder name)
+mbp MyPlugin enable
+mbp MyPlugin disable
+
+# Set app-specific activation rules
+mbp MyPlugin rule always
+mbp MyPlugin rule running com.apple.Safari
+mbp MyPlugin rule active com.apple.Safari
+mbp MyPlugin rule default
+
+# Check or toggle the fallback puzzle icon (default: on)
+mbp persistent-icon
+mbp persistent-icon off
+mbp persistent-icon on
+
+# Ask the running host app to re-scan Plugins/ or quit
+mbp reload
+mbp quit
+```
 
 ---
 

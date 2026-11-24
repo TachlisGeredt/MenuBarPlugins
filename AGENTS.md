@@ -7,6 +7,8 @@ This document tells AI coding agents how to build, compile, install, and test pl
 ## Architecture Summary
 
 - **Host App**: `MenuBarPlugins.app` (pure Swift + AppKit, `LSUIElement = true`, macOS 13+).
+  - Shows a fallback puzzle-piece icon only when 0 plugins are active and `persistentIcon` is `true` (default).
+  - Automatically appends a lazy **Manage Icons ▸** submenu to the bottom of every active plugin's menu (plugins do not need to add host controls themselves).
 - **Shared SDK**: `MenuBarPluginKit` (`MenuBarPlugins.app/Contents/Frameworks/libMenuBarPluginKit.dylib` + `MenuBarPluginKit.swiftmodule`).
 - **Portable Plugins Directory**: `Plugins/<PluginName>/` right next to `MenuBarPlugins.app`.
   - Every plugin is **100% self-contained** in its own subfolder:
@@ -158,6 +160,17 @@ When generating plugins for this framework, follow these rules to keep CPU and R
 
 # 5. Verify it is discovered
 ./mbp list
+```
+
+### Managing Plugins & Host Settings via CLI
+```bash
+./mbp list
+./mbp MyPlugin enable
+./mbp MyPlugin disable
+./mbp MyPlugin rule always | running <bundleID...> | active <bundleID...> | default
+./mbp persistent-icon [on|off]
+./mbp reload
+./mbp quit
 ```
 
 ### Direct `swiftc` Build (if not using `mbp`)

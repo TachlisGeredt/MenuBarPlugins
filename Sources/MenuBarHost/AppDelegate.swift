@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let manager = PluginManager(cliPluginsDirectory: cliPluginsDirectory)
         self.pluginManager = manager
         self.hostMenuController = HostMenuController(manager: manager)
+        manager.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
