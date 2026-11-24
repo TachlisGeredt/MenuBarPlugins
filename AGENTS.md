@@ -98,6 +98,7 @@ public func createPlugin() -> UnsafeMutableRawPointer {
 - `context.setSymbol(_ symbolName: String?, accessibilityDescription: String? = nil)` — SF Symbol template image
 - `context.setImage(_ image: NSImage?)` — custom menu bar `NSImage` (preserves full color)
 - `context.setTooltip(_ tooltip: String?)`
+- `context.setVisible(_ isVisible: Bool)` — shows or hides the status item without deactivating the plugin
 - `context.closePopover()`
 - `context.scheduleRepeating(interval: TimeInterval, leeway: TimeInterval = -1, fireImmediately: Bool = false, handler: @escaping () -> Void) -> PluginTimerToken`
 - `context.cancelAllTimers()`
@@ -148,25 +149,27 @@ When generating plugins for this framework, follow these rules to keep CPU and R
 
 ## Build, Install & Test Workflow
 
-### Creating & Installing a New Plugin
+### Creating & Building a New Plugin
+**IMPORTANT**: Everything for a plugin (sources, manifest, resources, docs, `.gitignore`, compiled `.dylib`, and `Data/`) **must live strictly inside `Plugins/<PluginName>/`** — never create plugin folders outside `Plugins/`.
+
 ```bash
 # 0. On a fresh clone (if ./mbp doesn't exist yet), build the host app & CLI first
 ./scripts/build-app.sh
 
-# 1. Scaffold
-./mbp new MyPlugin
+# 1. Scaffold directly inside Plugins/
+./mbp new MyPlugin Plugins
 
-# 2. Edit MyPlugin/Sources/MyPluginPlugin.swift and MyPlugin/manifest.json
-#    Also add a MyPlugin/.gitignore to ignore build/install/runtime artifacts:
-#      *.dylib, *.dSYM/, *.swiftmodule, *.swiftdoc, *.swiftsourceinfo, Data/, .DS_Store
+# 2. Edit Plugins/MyPlugin/Sources/MyPluginPlugin.swift and Plugins/MyPlugin/manifest.json
+#    Always create these files inside Plugins/MyPlugin/:
+#    - Plugins/MyPlugin/README.md   — user-facing overview, features, and build instructions
+#    - Plugins/MyPlugin/AGENTS.md   — agent guide for modifying, rebuilding, and testing this plugin
+#    - Plugins/MyPlugin/.gitignore  — ignore build/install/runtime artifacts:
+#        *.dylib, *.dSYM/, *.swiftmodule, *.swiftinterface, *.swiftdoc, *.swiftsourceinfo, Data/, .DS_Store
 
-# 3. Compile against MenuBarPluginKit
-./mbp build MyPlugin
+# 3. Compile in place against MenuBarPluginKit
+./mbp build Plugins/MyPlugin
 
-# 4. Install self-contained folder into Plugins/MyPlugin/
-./mbp install MyPlugin
-
-# 5. Verify it is discovered
+# 4. Verify it is discovered
 ./mbp list
 ```
 
@@ -193,7 +196,7 @@ swiftc \
   -I "$FRAMEWORKS_DIR" -L "$FRAMEWORKS_DIR" -lMenuBarPluginKit \
   -Xlinker -rpath -Xlinker "@executable_path/../Frameworks" \
   -o "Plugins/MyPlugin/libMyPlugin.dylib" \
-  MyPlugin/Sources/*.swift
+  Plugins/MyPlugin/Sources/*.swift
 ```
 
 ### Rebuilding the Framework & Running Tests

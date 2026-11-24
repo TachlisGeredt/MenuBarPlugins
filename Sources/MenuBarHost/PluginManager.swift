@@ -119,6 +119,10 @@ final class PluginManager {
         active.count
     }
 
+    var visiblePluginCount: Int {
+        active.values.filter { $0.statusController.isVisible }.count
+    }
+
     var persistentIcon: Bool {
         configStore.persistentIcon
     }
@@ -252,6 +256,11 @@ final class PluginManager {
                 },
                 onSetTooltip: { [weak statusController] tooltip in
                     statusController?.setTooltip(tooltip)
+                },
+                onSetVisible: { [weak self, weak statusController] isVisible in
+                    guard let statusController, statusController.isVisible != isVisible else { return }
+                    statusController.setVisible(isVisible)
+                    self?.onStateChanged?()
                 },
                 onClosePopover: { [weak statusController] in
                     statusController?.closePopover()

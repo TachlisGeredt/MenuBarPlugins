@@ -17,6 +17,7 @@ public final class PluginContext: NSObject {
     private let onSetSymbol: (String?, String?) -> Void
     private let onSetImage: (NSImage?) -> Void
     private let onSetTooltip: (String?) -> Void
+    private let onSetVisible: (Bool) -> Void
     private let onClosePopover: () -> Void
     private var timerTokens: [PluginTimerToken] = []
 
@@ -28,6 +29,7 @@ public final class PluginContext: NSObject {
         onSetSymbol: @escaping (String?, String?) -> Void,
         onSetImage: @escaping (NSImage?) -> Void = { _ in },
         onSetTooltip: @escaping (String?) -> Void,
+        onSetVisible: @escaping (Bool) -> Void = { _ in },
         onClosePopover: @escaping () -> Void
     ) {
         self.pluginID = pluginID
@@ -38,6 +40,7 @@ public final class PluginContext: NSObject {
         self.onSetSymbol = onSetSymbol
         self.onSetImage = onSetImage
         self.onSetTooltip = onSetTooltip
+        self.onSetVisible = onSetVisible
         self.onClosePopover = onClosePopover
     }
 
@@ -80,6 +83,15 @@ public final class PluginContext: NSObject {
             onSetTooltip(tooltip)
         } else {
             DispatchQueue.main.async { self.onSetTooltip(tooltip) }
+        }
+    }
+
+    /// Shows or hides the plugin's menu bar icon without deactivating the plugin.
+    public func setVisible(_ isVisible: Bool) {
+        if Thread.isMainThread {
+            onSetVisible(isVisible)
+        } else {
+            DispatchQueue.main.async { self.onSetVisible(isVisible) }
         }
     }
 

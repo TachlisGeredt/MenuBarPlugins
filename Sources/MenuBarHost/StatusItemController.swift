@@ -126,6 +126,17 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         statusItem.button?.image = image
     }
 
+    var isVisible: Bool {
+        statusItem.isVisible
+    }
+
+    func setVisible(_ isVisible: Bool) {
+        if !isVisible {
+            closePopover()
+        }
+        statusItem.isVisible = isVisible
+    }
+
     func setTooltip(_ tooltip: String?) {
         statusItem.button?.toolTip = tooltip
     }

@@ -34,9 +34,9 @@ final class HostMenuController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// Shows the puzzle icon iff `persistentIcon` is ON and 0 plugin icons are currently active.
+    /// Shows the puzzle icon iff `persistentIcon` is ON and 0 plugin icons are currently visible.
     func updateStatusItemVisibility() {
-        let shouldShow = manager.persistentIcon && manager.activePluginCount == 0
+        let shouldShow = manager.persistentIcon && manager.visiblePluginCount == 0
 
         if shouldShow {
             guard statusItem == nil else { return }
