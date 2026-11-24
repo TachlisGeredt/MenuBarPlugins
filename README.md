@@ -18,6 +18,17 @@ An ultra-lightweight, open, and modular macOS menu bar plugin framework built in
 
 ---
 
+## Plugins
+
+<!-- PLUGINS:START -->
+| Plugin | Description |
+| --- | --- |
+| [AndroidTether](https://github.com/TachlisGeredt/AndroidTether) | Displays a menu bar icon while USB tethering from an Android phone via aarif2/androidtether. |
+| [SystemMonitor](https://github.com/TachlisGeredt/SystemMonitor) | Lightweight CPU, RAM, and thermal throttling menu bar monitor. |
+<!-- PLUGINS:END -->
+
+---
+
 ## How It Works
 
 ```text
@@ -206,3 +217,10 @@ Every plugin needs just two files inside `Plugins/<PluginName>/`:
 ## Building Plugins with AI
 
 This repository includes an **[AGENTS.md](AGENTS.md)** file—a dedicated specification written for AI coding assistants (Antigravity, Claude Code, Codex, Cursor, Gemini CLI, etc.) explaining the exact plugin API, resource-efficiency rules, and build commands so any AI can generate and install working plugins for you automatically.
+
+---
+
+## Built With
+
+- **AI Harness**: Antigravity
+- **Model & Settings**: Gemini 4 Neon (Medium)

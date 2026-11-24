@@ -269,6 +269,27 @@ func cmdNew(_ args: [String]) throws {
     let swiftFile = sourcesDir.appendingPathComponent("\(className).swift")
     try swiftSource.write(to: swiftFile, atomically: true, encoding: .utf8)
 
+    let gitignoreContent = """
+    # Compiled build & install artifacts (never commit .dylib binaries)
+    *.dylib
+    *.dSYM/
+    *.swiftmodule
+    *.swiftinterface
+    *.swiftdoc
+    *.swiftsourceinfo
+
+    # Runtime plugin state
+    Data/
+
+    # macOS
+    .DS_Store
+    """
+    try gitignoreContent.write(
+        to: pluginDir.appendingPathComponent(".gitignore"),
+        atomically: true,
+        encoding: .utf8
+    )
+
     print("Created starter plugin at: \(pluginDir.path)")
     print("Next steps:")
     print("  mbp build \"\(pluginDir.path)\"")

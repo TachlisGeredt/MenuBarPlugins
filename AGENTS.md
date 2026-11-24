@@ -160,10 +160,10 @@ When generating plugins for this framework, follow these rules to keep CPU and R
 ./mbp new MyPlugin Plugins
 
 # 2. Edit Plugins/MyPlugin/Sources/MyPluginPlugin.swift and Plugins/MyPlugin/manifest.json
-#    Always create these files inside Plugins/MyPlugin/:
-#    - Plugins/MyPlugin/README.md   — user-facing overview, features, and build instructions
+#    Always ensure these files exist inside Plugins/MyPlugin/:
+#    - Plugins/MyPlugin/README.md   — user-facing overview noting it is a plugin for [MenuBarPlugins](https://github.com/TachlisGeredt/MenuBarPlugins), features, build instructions, and a "Built With" section listing the AI harness, model(s), and settings (e.g. thinking/effort level) used
 #    - Plugins/MyPlugin/AGENTS.md   — agent guide for modifying, rebuilding, and testing this plugin
-#    - Plugins/MyPlugin/.gitignore  — ignore build/install/runtime artifacts:
+#    - Plugins/MyPlugin/.gitignore  — MUST ignore compiled binaries & runtime artifacts (never commit or `git add -f` any `.dylib`):
 #        *.dylib, *.dSYM/, *.swiftmodule, *.swiftinterface, *.swiftdoc, *.swiftsourceinfo, Data/, .DS_Store
 
 # 3. Compile in place against MenuBarPluginKit
@@ -171,6 +171,11 @@ When generating plugins for this framework, follow these rules to keep CPU and R
 
 # 4. Verify it is discovered
 ./mbp list
+
+# 5. When publishing the plugin to GitHub under TachlisGeredt:
+#    - Set a concise GitHub repo description (≤ 120 chars so it fits in 1–2 lines in README.md)
+#    - Add the `menubarplugins-plugin` topic so the framework's README.md table auto-updates:
+#        gh repo edit TachlisGeredt/MyPlugin --add-topic menubarplugins-plugin
 ```
 
 ### Managing Plugins & Host Settings via CLI
