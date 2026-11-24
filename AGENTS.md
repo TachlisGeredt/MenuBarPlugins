@@ -91,6 +91,7 @@ public func createPlugin() -> UnsafeMutableRawPointer {
 - `try context.ensureDataDirectory() -> URL` — creates `Data/` on demand
 - `context.setTitle(_ title: String?)` — thread-safe (dispatches to main if needed)
 - `context.setSymbol(_ symbolName: String?, accessibilityDescription: String? = nil)` — SF Symbol template image
+- `context.setImage(_ image: NSImage?)` — custom menu bar `NSImage` (preserves full color)
 - `context.setTooltip(_ tooltip: String?)`
 - `context.closePopover()`
 - `context.scheduleRepeating(interval: TimeInterval, leeway: TimeInterval = -1, fireImmediately: Bool = false, handler: @escaping () -> Void) -> PluginTimerToken`
@@ -151,6 +152,8 @@ When generating plugins for this framework, follow these rules to keep CPU and R
 ./mbp new MyPlugin
 
 # 2. Edit MyPlugin/Sources/MyPluginPlugin.swift and MyPlugin/manifest.json
+#    Also add a MyPlugin/.gitignore to ignore build/install/runtime artifacts:
+#      *.dylib, *.dSYM/, *.swiftmodule, *.swiftdoc, *.swiftsourceinfo, Data/, .DS_Store
 
 # 3. Compile against MenuBarPluginKit
 ./mbp build MyPlugin

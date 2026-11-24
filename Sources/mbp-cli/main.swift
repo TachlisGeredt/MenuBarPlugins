@@ -353,6 +353,13 @@ func cmdInstall(_ args: [String]) throws {
     try fm.copyItem(at: manifestURL, to: destManifest)
     try fm.copyItem(at: dylibURL, to: destDylib)
 
+    let srcResources = srcDir.appendingPathComponent("Resources", isDirectory: true)
+    if fm.fileExists(atPath: srcResources.path) {
+        let destResources = destDir.appendingPathComponent("Resources", isDirectory: true)
+        if fm.fileExists(atPath: destResources.path) { try fm.removeItem(at: destResources) }
+        try fm.copyItem(at: srcResources, to: destResources)
+    }
+
     print("Installed self-contained plugin to: \(destDir.path)")
 }
 

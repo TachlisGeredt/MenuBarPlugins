@@ -15,6 +15,7 @@ public final class PluginContext: NSObject {
     private let scheduler: PluginScheduler
     private let onSetTitle: (String?) -> Void
     private let onSetSymbol: (String?, String?) -> Void
+    private let onSetImage: (NSImage?) -> Void
     private let onSetTooltip: (String?) -> Void
     private let onClosePopover: () -> Void
     private var timerTokens: [PluginTimerToken] = []
@@ -25,6 +26,7 @@ public final class PluginContext: NSObject {
         scheduler: PluginScheduler,
         onSetTitle: @escaping (String?) -> Void,
         onSetSymbol: @escaping (String?, String?) -> Void,
+        onSetImage: @escaping (NSImage?) -> Void = { _ in },
         onSetTooltip: @escaping (String?) -> Void,
         onClosePopover: @escaping () -> Void
     ) {
@@ -34,6 +36,7 @@ public final class PluginContext: NSObject {
         self.scheduler = scheduler
         self.onSetTitle = onSetTitle
         self.onSetSymbol = onSetSymbol
+        self.onSetImage = onSetImage
         self.onSetTooltip = onSetTooltip
         self.onClosePopover = onClosePopover
     }
@@ -59,6 +62,15 @@ public final class PluginContext: NSObject {
             onSetSymbol(symbolName, accessibilityDescription)
         } else {
             DispatchQueue.main.async { self.onSetSymbol(symbolName, accessibilityDescription) }
+        }
+    }
+
+    /// Updates the custom `NSImage` displayed in the macOS menu bar for this plugin.
+    public func setImage(_ image: NSImage?) {
+        if Thread.isMainThread {
+            onSetImage(image)
+        } else {
+            DispatchQueue.main.async { self.onSetImage(image) }
         }
     }
 

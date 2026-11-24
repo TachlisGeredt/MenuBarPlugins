@@ -119,6 +119,10 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         }
     }
 
+    func setImage(_ image: NSImage?) {
+        statusItem.button?.image = image
+    }
+
     func setTooltip(_ tooltip: String?) {
         statusItem.button?.toolTip = tooltip
     }

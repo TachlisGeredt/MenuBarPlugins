@@ -247,6 +247,9 @@ final class PluginManager {
                 onSetSymbol: { [weak statusController] symbol, desc in
                     statusController?.setSymbol(symbol, accessibilityDescription: desc)
                 },
+                onSetImage: { [weak statusController] image in
+                    statusController?.setImage(image)
+                },
                 onSetTooltip: { [weak statusController] tooltip in
                     statusController?.setTooltip(tooltip)
                 },
