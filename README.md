@@ -23,7 +23,6 @@ An ultra-lightweight, open, and modular macOS menu bar plugin framework built in
 <!-- PLUGINS:START -->
 | Plugin | Description |
 | --- | --- |
-| [AndroidTether](https://github.com/TachlisGeredt/AndroidTether) | Displays a menu bar icon while USB tethering from an Android phone via aarif2/androidtether. |
 | [SystemMonitor](https://github.com/TachlisGeredt/SystemMonitor) | Lightweight CPU, RAM, and thermal throttling menu bar monitor. |
 <!-- PLUGINS:END -->
 
